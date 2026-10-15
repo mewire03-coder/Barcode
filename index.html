@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ur" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بارکوڈ ڈی کوڈر</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  body { font-family: sans-serif; margin: 0; background: #f4f6f8; color: #222; }
+  header { background: #1f3a5f; color: #fff; padding: 14px; text-align: center; font-size: 20px; }
+  .wrap { padding: 12px; max-width: 520px; margin: auto; }
+  #reader { width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+  button { width: 100%; padding: 14px; margin-top: 12px; font-size: 17px; border: none; border-radius: 8px; background: #1f3a5f; color: #fff; }
+  .card { background: #fff; border-radius: 8px; padding: 12px; margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .label { font-size: 13px; color: #666; }
+  .value { font-size: 17px; font-weight: bold; margin-bottom: 6px; direction: ltr; text-align: right; }
+  .fake { background: #fde2e2; border: 2px solid #c0392b; color: #7a1c12; }
+  .fake h2 { margin: 0 0 6px; color: #c0392b; }
+  .ok { background: #e3f6e8; border: 2px solid #2e7d32; }
+  .ok h2 { margin: 0 0 6px; color: #2e7d32; }
+  ul { padding-right: 18px; margin: 6px 0; }
+  .raw { font-family: monospace; direction: ltr; font-size: 14px; word-break: break-all; }
+</style>
+</head>
+<body>
+<header>بارکوڈ ڈی کوڈر اور تصدیق</header>
+<div class="wrap">
+  <div id="reader"></div>
+  <button id="toggle">کیمرہ شروع کریں</button>
+  <div id="output"></div>
+</div>
+
+<script>
+// ===== ماسٹر ڈیٹا (اپنی فہرست کے مطابق) =====
+const PRODUCTS = {
+  '01': 'Mujahid enamelled wire',
+  '02': 'Muslim enamelled wire'
+};
+const SUPERVISORS = {
+  '01': 'Mr. Sageer',
+  '02': 'Saif Khan',
+  '03': 'Nadeem Baig',
+  '04': 'Ramzan'
+};
+const ENAMELS = {
+  '01': 'black',
+  '02': 'golden'
+};
+const FORMULATIONS = {
+  '01': 'Class F 155c'
+};
+
+// ===== مددگار فنکشن =====
+function luhnValid(code) {
+  let total = 0;
+  for (let i = 0; i < code.length; i++) {
+    let d = parseInt(code[code.length - 1 - i], 10);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    total += d;
+  }
+  return total % 10 === 0;
+}
+
+function decodeSwg(three) {
+  const n = parseInt(three, 10);
+  return n % 10 === 0 ? String(n / 10) : (n / 10).toFixed(1);
+}
+
+function formatDate(yymmdd) {
+  const yy = parseInt(yymmdd.slice(0, 2), 10);
+  const mm = parseInt(yymmdd.slice(2, 4), 10);
+  const dd = parseInt(yymmdd.slice(4, 6), 10);
+  return { yy: 2000 + yy, mm, dd, text: `${String(dd).padStart(2,'0')}-${String(mm).padStart(2,'0')}-${2000 + yy}` };
+}
+
+// ===== ڈی کوڈ اور تصدیق =====
+function checkCode(raw) {
+  const code = String(raw).trim();
+  const problems = [];
+
+  if (!/^\d{30}$/.test(code)) {
+    return { ok: false, problems: ['بارکوڈ ٹھیک 30 ہندسوں کا نہیں ہے'], code };
+  }
+  if (!luhnValid(code)) problems.push('چیک ڈیجٹ درست نہیں ہے');
+
+  const productCode = code.slice(0, 2);
+  const swgRaw = code.slice(2, 5);
+  const enamelCode = code.slice(5, 7);
+  const formCode = code.slice(7, 9);
+  const supCode = code.slice(9, 11);
+  const dateRaw = code.slice(11, 17);
+  const netRaw = code.slice(17, 22);
+  const spoolRaw = code.slice(22, 25);
+  const seq = code.slice(25, 29);
+
+  if (!PRODUCTS[productCode]) problems.push('پروڈکٹ کا کوڈ فہرست میں نہیں');
+  if (!ENAMELS[enamelCode]) problems.push('انامل کا کوڈ فہرست میں نہیں');
+  if (!FORMULATIONS[formCode]) problems.push('فارمولیشن کا کوڈ فہرست میں نہیں');
+  if (!SUPERVISORS[supCode]) problems.push('سپروائزر کا کوڈ فہرست میں نہیں');
+
+  const d = formatDate(dateRaw);
+  if (d.mm < 1 || d.mm > 12 || d.dd < 1 || d.dd > 31) problems.push('تاریخ درست نہیں ہے');
+
+  const swg = parseInt(swgRaw, 10);
+  if (swg < 10 || swg > 999) problems.push('SWG کی قدر درست نہیں ہے');
+
+  const netG = parseInt(netRaw, 10);
+  if (netG <= 0) problems.push('خالص وزن درست نہیں ہے');
+
+  if (parseInt(seq, 10) < 1) problems.push('سیریل نمبر درست نہیں ہے');
+
+  return {
+    ok: problems.length === 0,
+    problems,
+    code,
+    details: {
+      'پروڈکٹ': PRODUCTS[productCode] || `نامعلوم (${productCode})`,
+      'SWG': decodeSwg(swgRaw),
+      'انامل کی قسم': ENAMELS[enamelCode] || `نامعلوم (${enamelCode})`,
+      'فارمولیشن': FORMULATIONS[formCode] || `نامعلوم (${formCode})`,
+      'سپروائزر': SUPERVISORS[supCode] || `نامعلوم (${supCode})`,
+      'تیاری کی تاریخ': d.text,
+      'خالص وزن': (netG / 1000).toFixed(3) + ' kg',
+      'اسپول کا وزن': parseInt(spoolRaw, 10) + ' g',
+      'روزانہ کا سیریل': seq
+    }
+  };
+}
+
+// ===== نتیجہ دکھانا =====
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function showResult(raw) {
+  const r = checkCode(raw);
+  const out = document.getElementById('output');
+  if (!r.ok) {
+    out.innerHTML = `
+      <div class="card fake">
+        <h2>فیک پروڈکٹ</h2>
+        <ul>${r.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        <div class="label">اسکین شدہ قدر</div>
+        <div class="raw">${esc(r.code)}</div>
+      </div>`;
+  } else {
+    let rows = '';
+    for (const [k, v] of Object.entries(r.details)) {
+      rows += `<div class="label">${esc(k)}</div><div class="value">${esc(v)}</div>`;
+    }
+    out.innerHTML = `
+      <div class="card ok">
+        <h2>تصدیق شدہ پروڈکٹ</h2>
+        ${rows}
+        <div class="label">مکمل کوڈ</div>
+        <div class="raw">${esc(r.code)}</div>
+      </div>`;
+  }
+}
+
+// ===== کیمرہ =====
+let scanner = null;
+let running = false;
+let lastCode = null;
+let lastTime = 0;
+
+const toggleBtn = document.getElementById('toggle');
+
+toggleBtn.addEventListener('click', async () => {
+  if (running) {
+    await scanner.stop();
+    running = false;
+    toggleBtn.textContent = 'کیمرہ شروع کریں';
+    return;
+  }
+  if (!scanner) {
+    scanner = new Html5Qrcode('reader', {
+      formatsToSupport: [ Html5QrcodeSupportedFormats.DATA_MATRIX, Html5QrcodeSupportedFormats.QR_CODE ],
+      verbose: false
+    });
+  }
+  try {
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      (text) => {
+        // ایک ہی کوڈ بار بار نہ پڑھا جائے
+        const now = Date.now();
+        if (text === lastCode && now - lastTime < 3000) return;
+        lastCode = text;
+        lastTime = now;
+        showResult(text);
+      },
+      () => {}
+    );
+    running = true;
+    toggleBtn.textContent = 'کیمرہ بند کریں';
+  } catch (e) {
+    document.getElementById('output').innerHTML =
+      `<div class="card fake"><h2>کیمرہ نہیں کھل سکا</h2><div>${esc(e)}</div><div>براؤزر میں کیمرے کی اجازت دیں اور صفحہ HTTPS پر کھولیں۔</div></div>`;
+  }
+});
+</script>
+</body>
+</html>
